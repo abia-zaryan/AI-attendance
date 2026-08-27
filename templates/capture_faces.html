@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block nav_students %}active{% endblock %}
+{% block page_title %}Capture Face Samples{% endblock %}
+{% block content %}
+<div class="row g-3 justify-content-center">
+  <div class="col-lg-7">
+    <div class="card panel">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-camera"></i> {{ student.name }} <span class="id-tag">{{ student.student_id }}</span></span>
+        <select id="targetSel" class="form-select form-select-sm w-auto" onchange="TARGET=+this.value">
+          <option value="40">Target: 40</option>
+          <option value="60">Target: 60</option>
+          <option value="100">Target: 100</option>
+          <option value="150">Target: 150</option>
+        </select>
+      </div>
+      <div class="card-body">
+        <div class="camera-box">
+          <video id="video" autoplay playsinline muted></video>
+          <div class="corner tl"></div><div class="corner tr"></div>
+          <div class="corner bl"></div><div class="corner br"></div>
+          <div class="camera-error d-none" id="camError">
+            <i class="bi bi-camera-video-off fs-2"></i><p class="mb-0">Camera not accessible. Allow camera permission and reload.</p>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <button class="btn btn-primary" id="startBtn" onclick="startCamera()"><i class="bi bi-camera-video"></i> Start Camera</button>
+          <button class="btn btn-outline-primary" id="autoBtn" onclick="toggleAuto()" disabled><i class="bi bi-lightning-charge"></i> Auto Capture</button>
+          <button class="btn btn-outline-secondary" id="manualBtn" onclick="captureOnce()" disabled><i class="bi bi-camera-fill"></i> Capture 1</button>
+          <form method="post" action="{{ url_for('reset_samples', student_id=student.student_id) }}"
+                onsubmit="return confirm('Clear all captured samples for this student?')">
+            <button class="btn btn-outline-danger"><i class="bi bi-trash"></i> Reset Samples</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card panel mb-3">
+      <div class="card-header"><i class="bi bi-collection"></i> Progress</div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between mb-1">
+          <span class="text-muted small">Samples captured</span>
+          <strong class="mono"><span id="countLabel">{{ samples }}</span> / <span id="targetLabel">40</span></strong>
+        </div>
+        <div class="progress" style="height:10px">
+          <div class="progress-bar" id="progressBar" role="progressbar" style="width:0%"></div>
+        </div>
+        <div class="alert alert-info mt-3 mb-0 small">
+          <i class="bi bi-info-circle"></i> Look straight, then slightly left / right / up / down. Vary
+          expressions and keep the room well-lit — this directly improves recognition accuracy.
+        </div>
+        <div id="statusMsg" class="small mt-2 text-danger"></div>
+      </div>
+    </div>
+    <div class="card panel">
+      <div class="card-header"><i class="bi bi-cpu"></i> Train Model</div>
+      <div class="card-body">
+        <p class="small text-muted mb-2">After capturing samples for all students, train the recognition model.</p>
+        <button class="btn btn-primary w-100" onclick="trainModel(this)"><i class="bi bi-cpu"></i> Train Face Model</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+const STUDENT_ID = "{{ student.student_id }}";
+let TARGET = 40, stream = null, timer = null, count = {{ samples }};
+
+function updateCount() {
+  document.getElementById("countLabel").textContent = count;
+  document.getElementById("targetLabel").textContent = TARGET;
+  document.getElementById("progressBar").style.width = Math.min(100, count / TARGET * 100) + "%";
+}
+updateCount();
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    document.getElementById("video").srcObject = stream;
+    document.getElementById("startBtn").disabled = true;
+    document.getElementById("autoBtn").disabled = false;
+    document.getElementById("manualBtn").disabled = false;
+  } catch (e) {
+    document.getElementById("camError").classList.remove("d-none");
+  }
+}
+
+async function sendFrame() {
+  const video = document.getElementById("video");
+  if (!video.videoWidth) return;
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  try {
+    const res = await fetch("/api/capture-frame", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ student_id: STUDENT_ID, image: canvas.toDataURL("image/jpeg", 0.9) })
+    });
+    const data = await res.json();
+    if (data.success) { count = data.count; updateCount(); }
+    document.getElementById("statusMsg").textContent = data.message || "";
+    if (count >= TARGET && timer) toggleAuto();
+  } catch (e) { document.getElementById("statusMsg").textContent = "Server error while saving sample."; }
+}
+
+function captureOnce() { if (stream) sendFrame(); }
+
+function toggleAuto() {
+  const btn = document.getElementById("autoBtn");
+  if (timer) {
+    clearInterval(timer); timer = null;
+    btn.innerHTML = '<i class="bi bi-lightning-charge"></i> Auto Capture';
+  } else {
+    timer = setInterval(sendFrame, 700);
+    btn.innerHTML = '<i class="bi bi-stop-fill"></i> Stop Auto';
+  }
+}
+
+async function trainModel(btn) {
+  const original = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Training...';
+  try {
+    const res = await fetch("/api/train", { method: "POST" });
+    const data = await res.json();
+    showToast(data.message || "Done", data.success ? "success" : "danger");
+  } catch (e) { showToast("Training failed.", "danger"); }
+  btn.disabled = false; btn.innerHTML = original;
+}
+</script>
+{% endblock %}

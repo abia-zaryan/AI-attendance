@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block nav_records %}active{% endblock %}
+{% block page_title %}Attendance Records{% endblock %}
+{% block content %}
+<div class="card panel mb-3">
+  <div class="card-body">
+    <form class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label small">Date</label>
+        <input type="date" name="date" class="form-control" value="{{ filters.date }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Class</label>
+        <select name="class" class="form-select">
+          <option value="">All Classes</option>
+          {% for c in classes %}<option value="{{ c }}" {% if filters.class == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">Status</label>
+        <select name="status" class="form-select">
+          <option value="">All</option>
+          <option value="present" {% if filters.status == 'present' %}selected{% endif %}>Present</option>
+          <option value="absent" {% if filters.status == 'absent' %}selected{% endif %}>Absent</option>
+        </select>
+      </div>
+      <div class="col-md-3 d-flex gap-2">
+        <button class="btn btn-primary flex-grow-1"><i class="bi bi-funnel"></i> Filter</button>
+        <a class="btn btn-outline-success" href="/export/csv{% if filters.date %}?start={{ filters.date }}&end={{ filters.date }}{% endif %}">
+          <i class="bi bi-filetype-csv"></i> CSV</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card panel">
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Student</th><th>Class</th><th>Date</th><th>In</th><th>Out</th><th>Duration</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for r in records %}
+        <tr>
+          <td><strong>{{ r.name }}</strong> <span class="id-tag">{{ r.student_id }}</span></td>
+          <td>{{ r.class_name or '—' }}</td>
+          <td class="mono">{{ r.date }}</td>
+          <td class="mono">{{ r.in_time|timefmt }}</td>
+          <td class="mono">{{ r.out_time|timefmt }}</td>
+          <td class="mono">{{ r.duration_minutes|durfmt }}</td>
+          <td>{% if r.status == 'present' %}<span class="badge bg-success">Present</span>
+              {% else %}<span class="badge bg-danger">Absent</span>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-5">No records match these filters.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

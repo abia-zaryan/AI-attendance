@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block nav_dashboard %}active{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+{% if not trained %}
+<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i>
+  Face model isn't trained yet. <a href="{{ url_for('register_student') }}">Register a student</a>,
+  capture samples, then train the model from the Students page.</div>
+{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="stat-card bracket d-flex align-items-start gap-3">
+      <div class="stat-icon" style="background:var(--ink)"><i class="bi bi-people-fill"></i></div>
+      <div><div class="stat-value">{{ total_students }}</div><div class="stat-label">Total Students</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card bracket d-flex align-items-start gap-3">
+      <div class="stat-icon" style="background:var(--success)"><i class="bi bi-check-circle-fill"></i></div>
+      <div><div class="stat-value">{{ present_today }}</div><div class="stat-label">Present Today</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card bracket d-flex align-items-start gap-3">
+      <div class="stat-icon" style="background:var(--danger)"><i class="bi bi-x-circle-fill"></i></div>
+      <div><div class="stat-value">{{ absent_today }}</div><div class="stat-label">Absent Today</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card bracket d-flex align-items-start gap-3">
+      <div class="stat-icon" style="background:var(--teal)"><i class="bi bi-graph-up"></i></div>
+      <div><div class="stat-value">{{ rate }}%</div><div class="stat-label">Attendance Rate</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card panel mb-3">
+      <div class="card-header"><i class="bi bi-graph-up-arrow"></i> Last 7 Days</div>
+      <div class="card-body"><canvas id="trendChart" height="90"></canvas></div>
+    </div>
+    <div class="card panel">
+      <div class="card-header"><i class="bi bi-clock-history"></i> Today's Activity</div>
+      <div class="card-body p-0">
+        <table class="table table-hover align-middle mb-0">
+          <thead><tr><th>Student</th><th>In</th><th>Out</th><th>Status</th></tr></thead>
+          <tbody>
+          {% for r in recent %}
+            <tr>
+              <td><strong>{{ r.name }}</strong> <span class="id-tag">{{ r.student_id }}</span></td>
+              <td class="mono">{{ r.in_time|timefmt }}</td>
+              <td class="mono">{{ r.out_time|timefmt }}</td>
+              <td>{% if r.status == 'present' %}<span class="badge bg-success">Present</span>
+                  {% else %}<span class="badge bg-danger">Absent</span>{% endif %}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="text-center text-muted py-4">No attendance marked yet today.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card panel mb-3">
+      <div class="card-header"><i class="bi bi-pie-chart-fill"></i> Today by Class</div>
+      <div class="card-body"><canvas id="classChart" height="220"></canvas></div>
+    </div>
+    <div class="card panel">
+      <div class="card-header"><i class="bi bi-lightning-charge-fill"></i> Quick Actions</div>
+      <div class="card-body d-grid gap-2">
+        <a class="btn btn-primary" href="{{ url_for('take_attendance') }}"><i class="bi bi-camera-video"></i> Take Attendance</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('register_student') }}"><i class="bi bi-person-plus"></i> Register Student</a>
+        <button class="btn btn-outline-secondary" onclick="trainModel(this)"><i class="bi bi-cpu"></i> Train Face Model</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+const trend = {{ trend|tojson }};
+const classCounts = {{ class_counts|tojson }};
+
+new Chart(document.getElementById("trendChart"), {
+  type: "line",
+  data: { labels: trend.map(t => t.date),
+    datasets: [{ label: "Present", data: trend.map(t => t.present),
+      borderColor: "#0EA894", backgroundColor: "rgba(14,168,148,.12)", fill: true, tension: .35, pointRadius: 3 }] },
+  options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+});
+
+const ccLabels = classCounts.map(c => c._id || "N/A");
+if (ccLabels.length) {
+  new Chart(document.getElementById("classChart"), {
+    type: "doughnut",
+    data: { labels: ccLabels, datasets: [{ data: classCounts.map(c => c.count),
+      backgroundColor: ["#0EA894","#0B1524","#F59E0B","#F2542D","#64748B","#16A34A"] }] },
+    options: { plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } } } }
+  });
+} else {
+  document.getElementById("classChart").outerHTML = '<p class="text-center text-muted mb-0">No data for today yet.</p>';
+}
+
+async function trainModel(btn) {
+  const original = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Training...';
+  try {
+    const res = await fetch("{{ url_for('api_train') }}", { method: "POST" });
+    const data = await res.json();
+    showToast(data.message || (data.success ? "Model trained." : "Training failed."), data.success ? "success" : "danger");
+    if (data.success) setTimeout(() => location.reload(), 1200);
+  } catch (e) { showToast("Training failed.", "danger"); }
+  btn.disabled = false; btn.innerHTML = original;
+}
+</script>
+{% endblock %}

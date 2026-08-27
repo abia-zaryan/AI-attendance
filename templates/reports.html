@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block nav_reports %}active{% endblock %}
+{% block page_title %}Reports{% endblock %}
+{% block content %}
+<div class="card panel mb-3">
+  <div class="card-body">
+    <form class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label small">From</label>
+        <input type="date" name="start" class="form-control" value="{{ start }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small">To</label>
+        <input type="date" name="end" class="form-control" value="{{ end }}">
+      </div>
+      <div class="col-md-3 d-flex gap-2">
+        <button class="btn btn-primary flex-grow-1"><i class="bi bi-funnel"></i> Apply</button>
+      </div>
+      <div class="col-md-3 d-flex gap-2">
+        <a class="btn btn-outline-success w-100" href="/export/csv?start={{ start }}&end={{ end }}">
+          <i class="bi bi-filetype-csv"></i> Export CSV</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3">
+    <div class="stat-card"><div class="stat-value">{{ overall }}%</div><div class="stat-label">Overall Attendance</div></div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card"><div class="stat-value">{{ total_present }}</div><div class="stat-label">Present (range)</div></div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card"><div class="stat-value">{{ total_absent }}</div><div class="stat-label">Absent (range)</div></div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat-card"><div class="stat-value">{{ rows|length }}</div><div class="stat-label">Students</div></div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card panel">
+      <div class="card-header"><i class="bi bi-bar-chart-fill"></i> Attendance % by Student</div>
+      <div class="card-body"><canvas id="studentChart" height="220"></canvas></div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card panel">
+      <div class="card-header"><i class="bi bi-graph-up"></i> Daily Present vs Absent</div>
+      <div class="card-body"><canvas id="dailyChart" height="220"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<div class="card panel mt-3">
+  <div class="card-header"><i class="bi bi-table"></i> Per-Student Breakdown</div>
+  <div class="card-body p-0">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Student</th><th>Class</th><th class="text-center">Present</th><th class="text-center">Absent</th><th style="width:220px">Attendance %</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td><strong>{{ r.name }}</strong> <span class="id-tag">{{ r.student_id }}</span></td>
+          <td>{{ r.class_name or '—' }}</td>
+          <td class="text-center mono">{{ r.present_days }}</td>
+          <td class="text-center mono">{{ r.absent_days }}</td>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <div class="progress flex-grow-1" style="height:8px">
+                <div class="progress-bar {% if r.percentage < 50 %}bg-danger{% elif r.percentage < 75 %}bg-warning{% endif %}"
+                     style="width:{{ r.percentage }}%"></div>
+              </div>
+              <small class="fw-semibold mono" style="width:48px">{{ r.percentage }}%</small>
+              {% if r.percentage < 75 and r.total_days > 0 %}
+                <span class="text-danger" title="Irregular attendance"><i class="bi bi-exclamation-triangle"></i></span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="text-center text-muted py-5">No students registered yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+const rows = {{ rows|tojson }};
+const daily = {{ daily|tojson }};
+
+new Chart(document.getElementById("studentChart"), {
+  type: "bar",
+  data: { labels: rows.map(r => r.name),
+    datasets: [{ label: "Attendance %", data: rows.map(r => r.percentage),
+      backgroundColor: rows.map(r => r.percentage >= 75 ? "#16A34A" : r.percentage >= 50 ? "#F59E0B" : "#DC2626") }] },
+  options: { scales: { y: { beginAtZero: true, max: 100 } }, plugins: { legend: { display: false } } }
+});
+
+new Chart(document.getElementById("dailyChart"), {
+  type: "line",
+  data: { labels: daily.map(d => d.date),
+    datasets: [
+      { label: "Present", data: daily.map(d => d.present), borderColor: "#0EA894", tension: .3 },
+      { label: "Absent", data: daily.map(d => d.absent), borderColor: "#F2542D", tension: .3 }] },
+  options: { scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+});
+</script>
+{% endblock %}

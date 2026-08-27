@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block nav_attendance %}active{% endblock %}
+{% block page_title %}Take Attendance{% endblock %}
+{% block content %}
+{% if not trained %}
+<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i>
+  Face model isn't trained yet. Register students, capture face samples, then click
+  <strong>Train Model</strong> on the Students page.</div>
+{% endif %}
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card panel">
+      <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="bi bi-camera-video"></i> Live Recognition</span>
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-primary active" id="modeIn" onclick="setMode('in')">Mark IN</button>
+          <button class="btn btn-outline-primary" id="modeOut" onclick="setMode('out')">Mark OUT</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="camera-box" id="cameraBox">
+          <video id="video" autoplay playsinline muted></video>
+          <canvas class="overlay" id="overlay"></canvas>
+          <div class="corner tl"></div><div class="corner tr"></div>
+          <div class="corner bl"></div><div class="corner br"></div>
+          <div class="live-dot" id="liveDot"><span class="dot"></span> Stopped</div>
+          <div class="camera-error d-none" id="camError">
+            <i class="bi bi-camera-video-off fs-2"></i><p class="mb-0">Camera not accessible. Allow camera permission and reload.</p>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <button class="btn btn-success" id="scanBtn" onclick="toggleScan()"><i class="bi bi-play-fill"></i> Start Scanning</button>
+          <button class="btn btn-danger" onclick="finalizeAttendance()"><i class="bi bi-check2-all"></i> Finalize (Mark Absent)</button>
+          <a class="btn btn-outline-secondary" href="{{ url_for('records') }}?date={{ today }}"><i class="bi bi-journal"></i> View Records</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card panel">
+      <div class="card-header d-flex justify-content-between">
+        <span><i class="bi bi-list-check"></i> Today's Attendance</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadToday()"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+      <div class="card-body p-0" style="max-height:560px; overflow-y:auto;">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light"><tr><th>Student</th><th>In</th><th>Out</th><th class="text-center">Status</th></tr></thead>
+          <tbody id="todayBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+let stream = null, scanning = false, busy = false, mode = "in", timer = null;
+const lastToast = {};
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById("modeIn").classList.toggle("active", m === "in");
+  document.getElementById("modeOut").classList.toggle("active", m === "out");
+}
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    const video = document.getElementById("video");
+    video.srcObject = stream;
+    video.onloadedmetadata = () => {
+      const overlay = document.getElementById("overlay");
+      overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+    };
+    return true;
+  } catch (e) {
+    document.getElementById("camError").classList.remove("d-none");
+    return false;
+  }
+}
+
+async function toggleScan() {
+  const btn = document.getElementById("scanBtn");
+  const dot = document.getElementById("liveDot");
+  const box = document.getElementById("cameraBox");
+  if (scanning) {
+    scanning = false; clearInterval(timer); timer = null;
+    btn.innerHTML = '<i class="bi bi-play-fill"></i> Start Scanning';
+    btn.classList.replace("btn-danger", "btn-success");
+    dot.innerHTML = '<span class="dot"></span> Stopped';
+    box.classList.remove("scanning");
+    return;
+  }
+  if (!stream) { const ok = await startCamera(); if (!ok) return; }
+  scanning = true;
+  btn.innerHTML = '<i class="bi bi-stop-fill"></i> Stop Scanning';
+  btn.classList.replace("btn-success", "btn-danger");
+  box.classList.add("scanning");
+  timer = setInterval(scanFrame, 1200);
+}
+
+async function scanFrame() {
+  if (busy) return;
+  busy = true;
+  const video = document.getElementById("video");
+  const dot = document.getElementById("liveDot");
+  if (!video.videoWidth) { busy = false; return; }
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  try {
+    const res = await fetch("/api/recognize", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ mode, image: canvas.toDataURL("image/jpeg", 0.85) })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      dot.innerHTML = `<span class="dot"></span> ${esc(data.message || "Error")}`;
+    } else {
+      dot.innerHTML = `<span class="dot"></span> Scanning (${mode === "in" ? "IN" : "OUT"})`;
+      drawBoxes(data.faces || []);
+      (data.events || []).forEach(ev => {
+        const key = ev.student_id + ev.action;
+        if (!toastOk(key)) return;
+        const type = ev.action === "in" || ev.action === "out" ? "success" : "secondary";
+        showToast(`<strong>${esc(ev.name)}</strong> — ${esc(ev.detail)}`, type);
+      });
+      if ((data.events || []).length) loadToday();
+    }
+  } catch (e) { dot.innerHTML = '<span class="dot"></span> Connection error'; }
+  busy = false;
+}
+
+function toastOk(key) {
+  const now = Date.now();
+  if ((lastToast[key] || 0) > now - 10000) return false;
+  lastToast[key] = now; return true;
+}
+
+function drawBoxes(faces) {
+  const overlay = document.getElementById("overlay");
+  const ctx = overlay.getContext("2d");
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  faces.forEach(f => {
+    const [x, y, w, h] = f.box;
+    ctx.strokeStyle = f.student_id ? "#0EA894" : "#F2542D";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x, y, w, h);
+    const label = f.student_id ? `${f.name} (${f.confidence}%)` : "Unknown";
+    ctx.font = "600 16px Inter, sans-serif";
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = "rgba(11,21,36,.85)";
+    ctx.fillRect(x, Math.max(0, y - 24), tw + 10, 22);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(label, x + 5, Math.max(16, y - 7));
+  });
+}
+
+async function loadToday() {
+  try {
+    const res = await fetch("/api/attendance/today");
+    const data = await res.json();
+    const rows = (data.records || []).map(r => `
+      <tr>
+        <td><strong>${esc(r.name)}</strong><br><small class="text-muted">${esc(r.student_id)}</small></td>
+        <td class="mono">${r.in_time ? esc(r.in_time) : "—"}</td>
+        <td class="mono">${r.out_time ? esc(r.out_time) : "—"}</td>
+        <td class="text-center">${r.status === "present"
+          ? '<span class="badge bg-success">P</span>'
+          : '<span class="badge bg-danger">A</span>'}</td>
+      </tr>`).join("");
+    document.getElementById("todayBody").innerHTML = rows ||
+      '<tr><td colspan="4" class="text-center text-muted py-4">No records yet today.</td></tr>';
+  } catch (e) {}
+}
+
+async function finalizeAttendance() {
+  if (!confirm("Mark every student without a record today as ABSENT?")) return;
+  try {
+    const res = await fetch("/api/attendance/finalize", { method: "POST" });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`Finalized — ${data.absent_count} student(s) marked absent.`, "warning");
+      loadToday();
+    }
+  } catch (e) { showToast("Finalize failed.", "danger"); }
+}
+
+loadToday();
+</script>
+{% endblock %}
