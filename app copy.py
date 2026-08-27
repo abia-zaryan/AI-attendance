@@ -117,18 +117,9 @@ def logout():
     return redirect(url_for("login"))
 
 
-# ───────────────────────────── public home ─────────────────────────────
-
-@app.route("/")
-def home():
-    if "user" in session:
-        return redirect(url_for("dashboard"))
-    return render_template("home.html")
-
-
 # ───────────────────────────── dashboard ─────────────────────────────
 
-@app.route("/dashboard")
+@app.route("/")
 @login_required
 def dashboard():
     db = get_db()
