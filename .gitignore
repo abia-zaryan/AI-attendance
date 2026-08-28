@@ -11,3 +11,10 @@ static/uploads/*
 !utils/data/*.xml
 .idea/
 .vscode/
+
+# Trained model contains real students' face data (biometric) — keep it
+# out of git, especially if the repo is public. MongoDB is the copy that
+# actually powers the live app; this local file regenerates every time
+# you click "Train Model".
+models/*.pkl
+!models/.gitkeep
