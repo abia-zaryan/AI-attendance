@@ -16,13 +16,6 @@ from config import FACE_THRESHOLD, SECRET_KEY, UPLOAD_DIR
 from utils.db import get_db, init_db, ping, today_str
 from utils.face_utils import FaceEngine
 
-if not hasattr(cv2, "face"):
-    raise RuntimeError(
-        "cv2.face not found. Install the contrib build:\n"
-        "  pip uninstall -y opencv-python opencv-python-headless\n"
-        "  pip install opencv-contrib-python-headless"
-    )
-
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
@@ -518,7 +511,7 @@ def server_error(e):
 
 if __name__ == "__main__":
     print("=" * 62)
-    print("  AI ATTENDANCE MANAGER  |  Flask + MongoDB + OpenCV (LBPH)")
+    print("  AI ATTENDANCE MANAGER  |  Flask + MongoDB + HOG features + ANN (MLPClassifier)")
     print("=" * 62)
     if ping():
         init_db()
