@@ -8,7 +8,9 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "dev-only-secret-change-this-in-produc
 DEFAULT_ADMIN_USER = os.environ.get("ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_PASS = os.environ.get("ADMIN_PASSWORD", "admin123")
 
-FACE_THRESHOLD = int(os.environ.get("FACE_THRESHOLD", "60"))
+# Minimum ANN confidence (%) required to accept a match; below this the
+# face is reported as "Unknown". Higher = stricter (fewer false positives).
+FACE_THRESHOLD = int(os.environ.get("FACE_THRESHOLD", "55"))
 FACE_SIZE = (200, 200)
 
 UPLOAD_DIR = os.path.join(BASE_DIR, "static", "uploads")
